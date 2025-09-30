@@ -4,6 +4,7 @@ const cors = require("cors");
 const port = process.env.PORT || 3000;
 const { MongoClient, ServerApiVersion } = require('mongodb');
 require("dotenv").config();
+const { ObjectId } = require('mongodb');
 
 
 
@@ -28,13 +29,61 @@ async function run() {
     const ClusterConnect = client.db("ClusterConnect")
     const ClusterConnectCollection = ClusterConnect.collection("taskess")
 
-    app.post('/add-task', async(req, res)=>{
-        const NewTask = req.body;
-        console.log('NewTask',NewTask);
-        const result = await ClusterConnectCollection.insertOne(NewTask)
-        res.send(result)
-        
+    app.post('/add-task', async (req, res) => {
+      const NewTask = req.body;
+      console.log('NewTask', NewTask);
+      const result = await ClusterConnectCollection.insertOne(NewTask)
+      res.send(result)
     })
+    app.get('/browse-tasks', async (req, res) => {
+      try {
+        const tasks = await ClusterConnectCollection.find({}).toArray();
+        res.json(tasks);
+      } catch (err) {
+        console.error('Error fetching tasks:', err);
+        res.status(500).send('Error fetching tasks');
+      }
+    });
+
+    app.get('/browse-tasks/:id', async (req, res) => {
+      const { id } = req.params;
+      try {
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).send('Invalid task ID');
+        }
+        const task = await ClusterConnectCollection.findOne({ _id: new ObjectId(id) });
+        if (!task) {
+          return res.status(404).send('Task not found');
+        }
+        res.json(task);
+      } catch (error) {
+        console.error(error);
+        res.status(500).send('Error fetching task details');
+      }
+    });
+
+    app.get('/featured-tasks', async (req, res) => {
+      try {
+        const featuredTasks = await ClusterConnectCollection.find().sort({ deadline: 1 }).limit(6).toArray();
+        res.json(featuredTasks);
+      } catch (error) {
+        console.error(error);
+        res.status(500).send('Error fetching featured tasks');
+      }
+    });
+
+    app.get('/my-posted-task', async (req, res) => {
+      const { userEmail } = req.query;
+      if (!userEmail) return res.status(400).send('Missing user email');
+
+      const tasks = await ClusterConnectCollection.find({ userEmail }).sort({ deadline: -1 }).toArray();
+
+      res.json(tasks);
+    });
+
+
+
+
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
@@ -48,10 +97,9 @@ run().catch(console.dir);
 
 // Default route
 app.get("/", (req, res) => {
-    res.send("Cluster Connect Server Home page");
-  });
-  
-  app.listen(port, () => {
-    console.log(`Cluster Connect server is running on port ${port}`);
-  });
-  
+  res.send("Cluster Connect Server Home page");
+});
+
+app.listen(port, () => {
+  console.log(`Cluster Connect server is running on port ${port}`);
+});
