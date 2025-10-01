@@ -11,7 +11,6 @@ app.use(express.json());
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.8k7klrr.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
-// Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -22,20 +21,16 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
     const ClusterConnect = client.db("ClusterConnect");
     const ClusterConnectCollection = ClusterConnect.collection("taskess");
 
-    // Route to add a new task
     app.post('/add-task', async (req, res) => {
       const NewTask = req.body;
-      console.log('NewTask', NewTask);
       const result = await ClusterConnectCollection.insertOne(NewTask);
       res.send(result);
     });
 
-    // Route to browse all tasks
     app.get('/browse-tasks', async (req, res) => {
       try {
         const tasks = await ClusterConnectCollection.find({}).toArray();
@@ -46,7 +41,6 @@ async function run() {
       }
     });
 
-    // Route to get a specific task by ID
     app.get('/browse-tasks/:id', async (req, res) => {
       const { id } = req.params;
       try {
@@ -64,7 +58,6 @@ async function run() {
       }
     });
 
-    // Route to get featured tasks
     app.get('/featured-tasks', async (req, res) => {
       try {
         const featuredTasks = await ClusterConnectCollection.find().sort({ deadline: 1 }).limit(6).toArray();
@@ -75,46 +68,33 @@ async function run() {
       }
     });
 
-    // Route to get tasks posted by a specific user
     app.get('/my-posted-task', async (req, res) => {
       const { userEmail } = req.query;
       if (!userEmail) return res.status(400).send('Missing user email');
-
       const tasks = await ClusterConnectCollection.find({ userEmail }).sort({ deadline: -1 }).toArray();
       res.json(tasks);
     });
 
-    // Server Code Adjustment
-    // Endpoint to increment bid count for a task
     app.post('/tasks/:id/bid', async (req, res) => {
       const { id } = req.params;
       try {
-        // ... (Your ID validation code) ...
-
-        // Increment bids count by 1 using findOneAndUpdate
         const updateResult = await ClusterConnectCollection.findOneAndUpdate(
           { _id: new ObjectId(id) },
           { $inc: { bids: 1 } },
-          { returnDocument: 'after' } // Returns the document after the update
+          { returnDocument: 'after' }
         );
 
-        if (!updateResult.value) { // Check the returned value property
+        if (!updateResult.value) {
           return res.status(404).send('Task not found');
         }
-
-        // ✅ Solution: Convert the MongoDB document value to a plain JavaScript object
-        // This often ensures that the ObjectId is correctly handled (e.g., converted to a string)
-        // before Express attempts to send it as JSON.
         const updatedTask = { ...updateResult.value };
-
-        res.json(updatedTask); // Return the updated task with the new bid count
-
+        res.json(updatedTask);
       } catch (err) {
         console.error(err);
         res.status(500).send('Error placing bid');
       }
     });
-    // Backend route to get the number of bids for a task
+
     app.get('/tasks/:id/bids', async (req, res) => {
       const { id } = req.params;
       try {
@@ -122,24 +102,75 @@ async function run() {
         if (!task) {
           return res.status(404).send('Task not found');
         }
-        res.json({ bids: task.bids }); // Assuming `bids` stores the number of bids
+        res.json({ bids: task.bids });
       } catch (err) {
         res.status(500).send('Error fetching bids');
       }
     });
-    // Send a ping to confirm a successful connection
+
+    app.get('/tasks/:id', async (req, res) => {
+      const { id } = req.params;
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).json({ error: 'Invalid task ID format' });
+      }
+      try {
+        const task = await ClusterConnectCollection.findOne({ _id: new ObjectId(id) });
+        if (!task) {
+          return res.status(404).json({ error: 'Task not found' });
+        }
+        res.json({ ...task, _id: task._id.toString() });
+      } catch (error) {
+        console.error('Error fetching task:', error);
+        res.status(500).json({ error: 'Failed to fetch task' });
+      }
+    });
+
+    app.put('/tasks/:id', async (req, res) => {
+      const { id } = req.params;
+      const updatedTaskData = req.body;
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).json({ error: 'Invalid task ID format' });
+      }
+      const { _id, ...updateFields } = updatedTaskData;
+      try {
+        const result = await ClusterConnectCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: updateFields }
+        );
+        if (result.matchedCount === 0) {
+          return res.status(404).json({ error: 'Task not found' });
+        }
+        res.json(result);
+      } catch (error) {
+        console.error('Error updating task:', error);
+        res.status(500).json({ error: 'Failed to update task' });
+      }
+    });
+
+    app.delete('/tasks/:id', async (req, res) => {
+      const { id } = req.params;
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).json({ error: 'Invalid task ID format' });
+      }
+      try {
+        const result = await ClusterConnectCollection.deleteOne({ _id: new ObjectId(id) });
+        if (result.deletedCount === 0) {
+          return res.status(404).json({ error: 'Task not found' });
+        }
+        res.json(result);
+      } catch (error) {
+        console.error('Error deleting task:', error);
+        res.status(500).json({ error: 'Failed to delete task' });
+      }
+    });
+
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
-
-  } finally {
-    // Ensure that the client will close when you finish/error
-    // await client.close();
-  }
+  } finally {}
 }
 
 run().catch(console.dir);
 
-// Default route
 app.get("/", (req, res) => {
   res.send("Cluster Connect Server Home page");
 });
